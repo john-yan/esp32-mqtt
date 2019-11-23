@@ -56,20 +56,20 @@ class MQTT {
   enum mqtt_request_t {
     mqtt_subscribe_request,
     mqtt_publish_request,
-    mqtt_handle_incoming_data_request,
+    mqtt_incoming_data_request,
 
     mqtt_unknown_request
   };
 
-  struct mqtt_request_info_t {
+  typedef struct {
     mqtt_request_t type;
     void* info;
-  };
+  } mqtt_request_info_t;
 
-  mqtt_request_info_t* allocate_subscribe_request_info(const char* topic, mqtt_topic_handler_t handler, void* handler_arg, int qos = 1);
-  mqtt_request_info_t* allocate_publish_request_info(const char* topic, const char* data, int qos = 1, int retain = 0);
-  mqtt_request_info_t* allocate_handle_incoming_data_request_info(const char* topic, size_t topic_length, const char* data, size_t data_length);
-  void deallocate_request_info(mqtt_request_info_t* info);
+  static mqtt_request_info_t* allocate_subscribe_request_info(const char* topic, mqtt_topic_handler_t handler, void* handler_arg, int qos = 1);
+  static mqtt_request_info_t* allocate_publish_request_info(const char* topic, const char* data, int qos = 1, int retain = 0);
+  static mqtt_request_info_t* allocate_incoming_data_request_info(const char* topic, size_t topic_length, const char* data, size_t data_length);
+  static void deallocate_request_info(mqtt_request_info_t* info);
   static esp_err_t default_mqtt_event_handler(esp_mqtt_event_handle_t event);
   static void mqtt_task(void*);
   bool try_to_subscribe(mqtt_subscribe_info_t* info);
@@ -87,8 +87,8 @@ class MQTT {
     void init(const char* broker_uri);
 
     mqtt_callback_info_t onEvent(esp_mqtt_event_id_t event_id, mqtt_handler_t _handler, void* _handler_arg) {
-      mqtt_callback_info_t old = callback_registry[event_id];
-      callback_registry[event_id] = {_handler, _handler_arg};
+      mqtt_callback_info_t old = event_handler_registry[event_id];
+      event_handler_registry[event_id] = {_handler, _handler_arg};
       return old;
     }
 

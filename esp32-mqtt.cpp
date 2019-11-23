@@ -2,16 +2,15 @@
 #include "freertos/task.h"
 #include "esp_system.h"
 #include "esp_log.h"
-#include "esp_http_client.h"
 #include "freertos/queue.h"
-#include "utils.h"
-#include "client.h"
-#include "controller.h"
-#include "cJSON.h"
-#include "event.h"
+#include "esp32-mqtt.h"
 #include <string>
 
-#define TAG "CLIENT"
+#define TAG "ESP32_MQTT"
+
+#define CHECK_NOT_NULL(p) assert((p) != NULL);
+
+using std::string;
 
 esp_err_t MQTT::default_mqtt_event_handler(esp_mqtt_event_handle_t event) {
   MQTT* mqtt = reinterpret_cast<MQTT*>(event->user_context);
@@ -21,42 +20,42 @@ esp_err_t MQTT::default_mqtt_event_handler(esp_mqtt_event_handle_t event) {
   switch(event->event_id) {
     case MQTT_EVENT_CONNECTED:
       ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
-      xEventGroupClearBits(mqtt_event, MQTT_DISCONNECTED_BIT);
-      xEventGroupSetBits(mqtt_event, MQTT_CONNECTED_BIT);
+      xEventGroupClearBits(mqtt->mqtt_event, MQTT_DISCONNECTED_BIT);
+      xEventGroupSetBits(mqtt->mqtt_event, MQTT_CONNECTED_BIT);
       break;
     case MQTT_EVENT_DISCONNECTED:
       ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
-      xEventGroupClearBits(mqtt_event, MQTT_CONNECTED_BIT);
-      xEventGroupSetBits(mqtt_event, MQTT_DISCONNECTED_BIT);
+      xEventGroupClearBits(mqtt->mqtt_event, MQTT_CONNECTED_BIT);
+      xEventGroupSetBits(mqtt->mqtt_event, MQTT_DISCONNECTED_BIT);
       break;
     case MQTT_EVENT_SUBSCRIBED:
       // ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d\n", event->msg_id);
-      xEventGroupSetBits(mqtt_event, MQTT_SUBSCRIBED_BIT);
+      xEventGroupSetBits(mqtt->mqtt_event, MQTT_SUBSCRIBED_BIT);
       break;
     case MQTT_EVENT_UNSUBSCRIBED:
       // ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
-      xEventGroupSetBits(mqtt_event, MQTT_UNSUBSCRIBED_BIT);
+      xEventGroupSetBits(mqtt->mqtt_event, MQTT_UNSUBSCRIBED_BIT);
       break;
     case MQTT_EVENT_PUBLISHED:
       // ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
-      xEventGroupSetBits(mqtt_event, MQTT_PUBLISHED_BIT);
+      xEventGroupSetBits(mqtt->mqtt_event, MQTT_PUBLISHED_BIT);
       break;
     case MQTT_EVENT_DATA: {
-      xEventGroupSetBits(mqtt_event, MQTT_DATA_BIT);
+      xEventGroupSetBits(mqtt->mqtt_event, MQTT_DATA_BIT);
 
       string data(event->data, event->data_len);
-      string topic_str(event->topic, event->topic_len);
+      string topic(event->topic, event->topic_len);
       
-      mqtt_request_info_t* info = allocate_incoming_data_request_info(topic, handler);
+      mqtt_request_info_t* info = allocate_incoming_data_request_info(event->topic, event->topic_len, event->data, event->data_len);
       CHECK_NOT_NULL(info);
-      if ( pdFALSE == xQueueSend(request_queue, &info, 0))
+      if ( pdFALSE == xQueueSend(mqtt->request_queue, &info, 0)) {
         // xQueueSend fail
         deallocate_request_info(info);
       }
       break;
     }
     case MQTT_EVENT_ERROR:
-      xEventGroupSetBits(mqtt_event, MQTT_ERROR_BIT);
+      xEventGroupSetBits(mqtt->mqtt_event, MQTT_ERROR_BIT);
       ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
       break;
     default:
@@ -87,17 +86,17 @@ void MQTT::init(const char* broker_uri) {
   CHECK_NOT_NULL(client);
   esp_mqtt_client_start(client);
 
-  CHECK_PASS(xTaskCreate(mqtt_task, "mqtt_task", 4096, this, tskIDLE_PRIORITY, &mqtt_task_handle));
+  assert(pdPASS == xTaskCreate(mqtt_task, "mqtt_task", 4096, this, tskIDLE_PRIORITY, &mqtt_task_handle));
   request_queue = xQueueCreate(10, sizeof(mqtt_request_info_t*));
   mqtt_event = xEventGroupCreate();
   CHECK_NOT_NULL(request_queue);
   CHECK_NOT_NULL(mqtt_event);
 
   int connected = xEventGroupWaitBits(mqtt_event, MQTT_CONNECTED_BIT, false, true, portMAX_DELAY);
-  CHECK(connected);
+  assert(connected);
 }
 
-mqtt_request_info_t* MQTT::allocate_subscribe_request_info(const char* topic, mqtt_topic_handler_t handler, void* handler_arg, int qos = 1) {
+MQTT::mqtt_request_info_t* MQTT::allocate_subscribe_request_info(const char* topic, mqtt_topic_handler_t handler, void* handler_arg, int qos) {
   mqtt_subscribe_info_t* info = new mqtt_subscribe_info_t();
   CHECK_NOT_NULL(info);
   info->topic = topic;
@@ -105,36 +104,62 @@ mqtt_request_info_t* MQTT::allocate_subscribe_request_info(const char* topic, mq
   info->callback_info.handler = handler;
   info->callback_info.handler_arg = handler_arg;
 
-  return new mqtt_request_info_t(mqtt_subscribe_request, info);
+  mqtt_request_info_t* req_info = new mqtt_request_info_t();
+  CHECK_NOT_NULL(req_info);
+  req_info->type = mqtt_subscribe_request;
+  req_info->info = info;
+  return req_info;
 }
 
-mqtt_request_info_t* MQTT::allocate_publish_request_info(const char* topic, const char* data, int qos = 1, int retain = 0) {
+MQTT::mqtt_request_info_t* MQTT::allocate_publish_request_info(const char* topic, const char* data, int qos, int retain) {
   mqtt_publish_info_t* info = new mqtt_publish_info_t();
   info->topic = topic;
   info->data = data;
   info->qos = qos;
   info->retain = retain;
 
-  return new mqtt_request_info_t(mqtt_publish_request, info);
+  mqtt_request_info_t* req_info = new mqtt_request_info_t();
+  CHECK_NOT_NULL(req_info);
+  req_info->type = mqtt_publish_request;
+  req_info->info = info;
+  return req_info;
 }
 
-mqtt_request_info_t* MQTT::allocate_incoming_data_request_info(const char* topic, size_t topic_length, const char* data, size_t data_length) {
+MQTT::mqtt_request_info_t* MQTT::allocate_incoming_data_request_info(const char* topic, size_t topic_length, const char* data, size_t data_length) {
   mqtt_incoming_data_info_t* info = new mqtt_incoming_data_info_t();
   info->topic = std::string(topic, topic_length);
   info->data = std::string(data, data_length);
 
-  return new mqtt_request_info_t(mqtt_handle_incoming_data_request, info);
+  mqtt_request_info_t* req_info = new mqtt_request_info_t();
+  CHECK_NOT_NULL(req_info);
+  req_info->type = mqtt_incoming_data_request;
+  req_info->info = info;
+  return req_info;
 }
 
 void MQTT::deallocate_request_info(mqtt_request_info_t* info) {
-  delete info->info;
+  switch(info->type) {
+    case mqtt_subscribe_request: {
+      delete reinterpret_cast<mqtt_subscribe_info_t*>(info->info);
+      break;
+    }
+    case mqtt_publish_request:
+      delete reinterpret_cast<mqtt_publish_info_t*>(info->info);
+      break;
+    case mqtt_incoming_data_request: {
+      delete reinterpret_cast<mqtt_incoming_data_info_t*>(info->info);
+    }
+    default:
+      ESP_LOGE(TAG, "Unknown mqtt_request_info_t type = %d ... skip!", info->type);
+      break;
+  }
   delete info;
 }
 
-bool MQTT::subscribe(const char* topic, mqtt_topic_handler_t handler, void* handler_arg, int qos = 1) {
+bool MQTT::subscribe(const char* topic, mqtt_topic_handler_t handler, void* handler_arg, int qos) {
   mqtt_request_info_t* info = allocate_subscribe_request_info(topic, handler, handler_arg, qos);
   CHECK_NOT_NULL(info);
-  if ( pdTRUE == xQueueSend(request_queue, &info, 0)) {
+  if ( pdPASS == xQueueSend(request_queue, &info, 0)) {
     return true;
   }
 
@@ -145,10 +170,10 @@ bool MQTT::subscribe(const char* topic, mqtt_topic_handler_t handler, void* hand
   // return msg_id;
 }
 
-int MQTT::publish(const char* topic, const char* data, int qos, int retain) {
+bool MQTT::publish(const char* topic, const char* data, int qos, int retain) {
   mqtt_request_info_t* info = allocate_publish_request_info(topic, data, qos, retain);
   CHECK_NOT_NULL(info);
-  if ( pdTRUE == xQueueSend(request_queue, &info, 0)) {
+  if ( pdPASS == xQueueSend(request_queue, &info, 0)) {
     return true;
   }
 
@@ -164,7 +189,7 @@ bool MQTT::try_to_subscribe(mqtt_subscribe_info_t* info) {
   assert(info);
 
   int connected = xEventGroupWaitBits(mqtt_event, MQTT_CONNECTED_BIT, false, true, portMAX_DELAY);
-  CHECK(connected);
+  assert(connected);
 
   xEventGroupClearBits(mqtt_event, MQTT_SUBSCRIBED_BIT);
 
@@ -198,11 +223,11 @@ bool MQTT::try_to_publish(mqtt_publish_info_t* info) {
   assert(info);
 
   int connected = xEventGroupWaitBits(mqtt_event, MQTT_CONNECTED_BIT, false, true, portMAX_DELAY);
-  CHECK(connected);
+  assert(connected);
 
   xEventGroupClearBits(mqtt_event, MQTT_PUBLISHED_BIT);
 
-  int msg_id = esp_mqtt_client_publish(info->topic.c_str(), info->data.c_str(), info->data.length(), info->qos, info->retain);
+  int msg_id = esp_mqtt_client_publish(client, info->topic.c_str(), info->data.c_str(), info->data.length(), info->qos, info->retain);
 
   if (msg_id == -1) {
     // unsuccessful
@@ -232,13 +257,11 @@ void MQTT::handle_incoming_data_request(mqtt_incoming_data_info_t* info) {
     return;
   }
 
-  mqtt_topic_callback_info_t info = it->second;
-  assert(info);
-
-  mqtt_topic_handler_t handler = info->handler;
+  mqtt_topic_callback_info_t cb_info = it->second;
+  mqtt_topic_handler_t handler = cb_info.handler;
   assert(handler);
 
-  handler(topic, data, info->handler_arg);
+  handler(topic, data, cb_info.handler_arg);
 }
 
 void MQTT::mqtt_task(void* parameter) {
@@ -250,22 +273,25 @@ void MQTT::mqtt_task(void* parameter) {
   mqtt_request_info_t* info = NULL;
 
   while (1) {
-    CHECK_TRUE(xQueueReceive(mqtt->request_queue, &info, portMAX_DELAY));
+    assert(pdPASS == (xQueueReceive(mqtt->request_queue, &info, portMAX_DELAY)));
     CHECK_NOT_NULL(info);
 
     switch(info->type) {
       case mqtt_subscribe_request: {
-        while(false == mqtt->try_to_subscribe(reinterpret_cast<mqtt_subscribe_info_t*>(info->info))) {
-          ESP_LOGW(TAG, "Subscribing to %s has failed.", info->topic->c_str());
+        mqtt_subscribe_info_t* sub_info = reinterpret_cast<mqtt_subscribe_info_t*>(info->info);
+        while(false == mqtt->try_to_subscribe(sub_info)) {
+          ESP_LOGW(TAG, "Subscribing to %s has failed.", sub_info->topic.c_str());
         }
         break;
       }
-      case mqtt_publish_request:
-        while(false == mqtt->try_to_publish(reinterpret_cast<mqtt_publish_info_t*>(info->info))) {
-          ESP_LOGW(TAG, "Publishing to %s has failed.", info->topic->c_str());
+      case mqtt_publish_request: {
+        mqtt_publish_info_t* pub_info = reinterpret_cast<mqtt_publish_info_t*>(info->info);
+        while(false == mqtt->try_to_publish(pub_info)) {
+          ESP_LOGW(TAG, "Publishing to %s has failed.", pub_info->topic.c_str());
         }
         break;
-      case mqtt_handle_incoming_data_request: {
+      }
+      case mqtt_incoming_data_request: {
         mqtt->handle_incoming_data_request(reinterpret_cast<mqtt_incoming_data_info_t*>(info->info));
       }
       default:
