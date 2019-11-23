@@ -77,7 +77,7 @@ void MQTT::init(const char* broker_uri) {
 
   static constexpr char const* MQTT_SERVER_URI = CONFIG_MQTT_SERVER_URI;
 
-  event_handler_registry.reserve(MQTT_EVENT_BEFORE_CONNECT);
+  event_handler_registry.resize(MQTT_EVENT_BEFORE_CONNECT + 1);
   if (broker_uri == NULL) {
     broker_uri = MQTT_SERVER_URI;
   }
