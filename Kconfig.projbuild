@@ -1,0 +1,8 @@
+menu "Wifi Configuration"
+
+config MQTT_SERVER_URI
+    string "mqtt server uri"
+    default "mqtt://192.168.1.132"
+
+endmenu
+
