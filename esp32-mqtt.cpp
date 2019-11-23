@@ -75,7 +75,12 @@ esp_err_t MQTT::default_mqtt_event_handler(esp_mqtt_event_handle_t event) {
 
 void MQTT::init(const char* broker_uri) {
 
+  static constexpr char const* MQTT_SERVER_URI = CONFIG_MQTT_SERVER_URI;
+
   event_handler_registry.reserve(MQTT_EVENT_BEFORE_CONNECT);
+  if (broker_uri == NULL) {
+    broker_uri = MQTT_SERVER_URI;
+  }
   CHECK_NOT_NULL(broker_uri);
   esp_mqtt_client_config_t mqtt_cfg = { 0 };
   mqtt_cfg.uri = broker_uri;

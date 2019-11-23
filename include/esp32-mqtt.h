@@ -9,8 +9,6 @@
 #include <vector>
 #include <map>
 
-static constexpr char const* MQTT_SERVER_URI = CONFIG_MQTT_SERVER_URI;
-
 class MQTT {
   typedef esp_err_t (*mqtt_handler_t)(esp_mqtt_event_handle_t event, void* handler_arg);
   typedef struct {
@@ -84,7 +82,7 @@ class MQTT {
   std::map<std::string, mqtt_topic_callback_info_t> topic_registry;
 
   public:
-    void init(const char* broker_uri);
+    void init(const char* broker_uri = NULL);
 
     mqtt_callback_info_t onEvent(esp_mqtt_event_id_t event_id, mqtt_handler_t _handler, void* _handler_arg) {
       mqtt_callback_info_t old = event_handler_registry[event_id];
