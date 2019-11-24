@@ -10,19 +10,23 @@
 #include <map>
 
 class MQTT {
+ public:
   typedef esp_err_t (*mqtt_handler_t)(esp_mqtt_event_handle_t event, void* handler_arg);
+  typedef void (*mqtt_topic_handler_t)(const std::string& topic, const std::string& data, void* handler_arg);
+  typedef void (*mqtt_subscribed_callback_t)(int status, const std::string& topic, void* callback_arg);
+  typedef void (*mqtt_published_callback_t)(int status, const std::string& topic, const std::string& data, void* callback_arg);
+
+ private:
   typedef struct {
     mqtt_handler_t handler;
     void* handler_arg;
   } mqtt_callback_info_t;
 
-  typedef void (*mqtt_topic_handler_t)(const std::string& topic, const std::string& data, void* handler_arg);
   typedef struct {
     mqtt_topic_handler_t handler;
     void* handler_arg;
   } mqtt_topic_callback_info_t;
 
-  typedef void (*mqtt_subscribed_callback_t)(int status, const std::string& topic, void* callback_arg);
   typedef struct {
     mqtt_subscribed_callback_t callback;
     void* callback_arg;
@@ -35,7 +39,6 @@ class MQTT {
     mqtt_subscribed_callback_info_t subscribed_callback_info;
   } mqtt_subscribe_info_t;
 
-  typedef void (*mqtt_published_callback_t)(int status, const std::string& topic, const std::string& data, void* callback_arg);
   typedef struct {
     mqtt_published_callback_t callback;
     void* callback_arg;

@@ -118,7 +118,7 @@ MQTT::mqtt_request_info_t* MQTT::allocate_subscribe_request_info(const char* top
   return req_info;
 }
 
-MQTT::mqtt_request_info_t* MQTT::allocate_publish_request_info(const char* topic, const char* data, int qos, int retain, mqtt_published_callback_t, callback, void* callback_arg) {
+MQTT::mqtt_request_info_t* MQTT::allocate_publish_request_info(const char* topic, const char* data, int qos, int retain, mqtt_published_callback_t callback, void* callback_arg) {
   mqtt_publish_info_t* info = new mqtt_publish_info_t();
   info->topic = topic;
   info->data = data;
@@ -223,7 +223,7 @@ bool MQTT::try_to_subscribe(mqtt_subscribe_info_t* info) {
     ESP_LOGW(TAG, "topic %s is subscribed twice!", info->topic.c_str());
   }
 
-  topic_registry[info->topic] = info->callback_info;
+  topic_registry[info->topic] = info->topic_callback_info;
   return true;
 }
 
