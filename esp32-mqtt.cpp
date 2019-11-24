@@ -157,6 +157,7 @@ void MQTT::deallocate_request_info(mqtt_request_info_t* info) {
       break;
     case mqtt_incoming_data_request: {
       delete reinterpret_cast<mqtt_incoming_data_info_t*>(info->info);
+      break;
     }
     default:
       ESP_LOGE(TAG, "Unknown mqtt_request_info_t type = %d ... skip!", info->type);
@@ -309,6 +310,7 @@ void MQTT::mqtt_task(void* parameter) {
       }
       case mqtt_incoming_data_request: {
         mqtt->handle_incoming_data_request(reinterpret_cast<mqtt_incoming_data_info_t*>(info->info));
+        break;
       }
       default:
         ESP_LOGE(TAG, "Unknown MQTTClientRequestType = %d ... skip!", info->type);
