@@ -22,17 +22,31 @@ class MQTT {
     void* handler_arg;
   } mqtt_topic_callback_info_t;
 
+  typedef void (*mqtt_subscribed_callback_t)(int status, const std::string& topic, void* callback_arg);
+  typedef struct {
+    mqtt_subscribed_callback_t callback;
+    void* callback_arg;
+  } mqtt_subscribed_callback_info_t;
+
   typedef struct {
     std::string topic;
     int qos;
-    mqtt_topic_callback_info_t callback_info;
+    mqtt_topic_callback_info_t topic_callback_info;
+    mqtt_subscribed_callback_info_t subscribed_callback_info;
   } mqtt_subscribe_info_t;
+
+  typedef void (*mqtt_published_callback_t)(int status, const std::string& topic, const std::string& data, void* callback_arg);
+  typedef struct {
+    mqtt_published_callback_t callback;
+    void* callback_arg;
+  } mqtt_published_callback_info_t;
 
   typedef struct {
     std::string topic;
     std::string data;
     int qos;
     int retain;
+    mqtt_published_callback_info_t published_callback_info;
   } mqtt_publish_info_t;
 
   typedef struct {
@@ -64,10 +78,16 @@ class MQTT {
     void* info;
   } mqtt_request_info_t;
 
-  static mqtt_request_info_t* allocate_subscribe_request_info(const char* topic, mqtt_topic_handler_t handler, void* handler_arg, int qos = 1);
-  static mqtt_request_info_t* allocate_publish_request_info(const char* topic, const char* data, int qos = 1, int retain = 0);
-  static mqtt_request_info_t* allocate_incoming_data_request_info(const char* topic, size_t topic_length, const char* data, size_t data_length);
+  static mqtt_request_info_t* allocate_subscribe_request_info(const char* topic,
+      mqtt_topic_handler_t handler, void* handler_arg,
+      int qos = 1, mqtt_subscribed_callback_t callback = NULL, void* callback_arg = NULL);
+  static mqtt_request_info_t* allocate_publish_request_info(const char* topic,
+      const char* data, int qos = 1, int retain = 0,
+      mqtt_published_callback_t callback = NULL, void* callback_arg = NULL);
+  static mqtt_request_info_t* allocate_incoming_data_request_info(const char* topic,
+      size_t topic_length, const char* data, size_t data_length);
   static void deallocate_request_info(mqtt_request_info_t* info);
+
   static esp_err_t default_mqtt_event_handler(esp_mqtt_event_handle_t event);
   static void mqtt_task(void*);
   bool try_to_subscribe(mqtt_subscribe_info_t* info);
@@ -90,8 +110,10 @@ class MQTT {
       return old;
     }
 
-    bool subscribe(const char* topic, mqtt_topic_handler_t handler, void* handler_arg, int qos = 1);
-    bool publish(const char* topic, const char* data, int qos = 1, int retain = 0);
+    bool subscribe(const char* topic, mqtt_topic_handler_t handler, void* handler_arg,
+        int qos = 1, mqtt_subscribed_callback_t callback = NULL, void* callback_arg = NULL);
+    bool publish(const char* topic, const char* data,
+        int qos = 1, int retain = 0, mqtt_published_callback_t callback = NULL, void* callback_arg = NULL);
 };
 
 #endif // ESP32_MQTT

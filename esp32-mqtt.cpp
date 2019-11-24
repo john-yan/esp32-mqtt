@@ -101,13 +101,15 @@ void MQTT::init(const char* broker_uri) {
   assert(connected);
 }
 
-MQTT::mqtt_request_info_t* MQTT::allocate_subscribe_request_info(const char* topic, mqtt_topic_handler_t handler, void* handler_arg, int qos) {
+MQTT::mqtt_request_info_t* MQTT::allocate_subscribe_request_info(const char* topic, mqtt_topic_handler_t handler, void* handler_arg, int qos, mqtt_subscribed_callback_t callback, void* callback_arg) {
   mqtt_subscribe_info_t* info = new mqtt_subscribe_info_t();
   CHECK_NOT_NULL(info);
   info->topic = topic;
   info->qos = qos;
-  info->callback_info.handler = handler;
-  info->callback_info.handler_arg = handler_arg;
+  info->topic_callback_info.handler = handler;
+  info->topic_callback_info.handler_arg = handler_arg;
+  info->subscribed_callback_info.callback = callback;
+  info->subscribed_callback_info.callback_arg = callback_arg;
 
   mqtt_request_info_t* req_info = new mqtt_request_info_t();
   CHECK_NOT_NULL(req_info);
@@ -116,12 +118,14 @@ MQTT::mqtt_request_info_t* MQTT::allocate_subscribe_request_info(const char* top
   return req_info;
 }
 
-MQTT::mqtt_request_info_t* MQTT::allocate_publish_request_info(const char* topic, const char* data, int qos, int retain) {
+MQTT::mqtt_request_info_t* MQTT::allocate_publish_request_info(const char* topic, const char* data, int qos, int retain, mqtt_published_callback_t, callback, void* callback_arg) {
   mqtt_publish_info_t* info = new mqtt_publish_info_t();
   info->topic = topic;
   info->data = data;
   info->qos = qos;
   info->retain = retain;
+  info->published_callback_info.callback = callback;
+  info->published_callback_info.callback_arg = callback_arg;
 
   mqtt_request_info_t* req_info = new mqtt_request_info_t();
   CHECK_NOT_NULL(req_info);
@@ -161,8 +165,8 @@ void MQTT::deallocate_request_info(mqtt_request_info_t* info) {
   delete info;
 }
 
-bool MQTT::subscribe(const char* topic, mqtt_topic_handler_t handler, void* handler_arg, int qos) {
-  mqtt_request_info_t* info = allocate_subscribe_request_info(topic, handler, handler_arg, qos);
+bool MQTT::subscribe(const char* topic, mqtt_topic_handler_t handler, void* handler_arg, int qos, mqtt_subscribed_callback_t callback, void* callback_arg) {
+  mqtt_request_info_t* info = allocate_subscribe_request_info(topic, handler, handler_arg, qos, callback, callback_arg);
   CHECK_NOT_NULL(info);
   if ( pdPASS == xQueueSend(request_queue, &info, 0)) {
     return true;
@@ -175,8 +179,8 @@ bool MQTT::subscribe(const char* topic, mqtt_topic_handler_t handler, void* hand
   // return msg_id;
 }
 
-bool MQTT::publish(const char* topic, const char* data, int qos, int retain) {
-  mqtt_request_info_t* info = allocate_publish_request_info(topic, data, qos, retain);
+bool MQTT::publish(const char* topic, const char* data, int qos, int retain, mqtt_published_callback_t callback, void* callback_arg) {
+  mqtt_request_info_t* info = allocate_publish_request_info(topic, data, qos, retain, callback, callback_arg);
   CHECK_NOT_NULL(info);
   if ( pdPASS == xQueueSend(request_queue, &info, 0)) {
     return true;
@@ -287,12 +291,19 @@ void MQTT::mqtt_task(void* parameter) {
         while(false == mqtt->try_to_subscribe(sub_info)) {
           ESP_LOGW(TAG, "Subscribing to %s has failed.", sub_info->topic.c_str());
         }
+        // success
+        if (sub_info->subscribed_callback_info.callback) {
+          sub_info->subscribed_callback_info.callback(true, sub_info->topic, sub_info->subscribed_callback_info.callback_arg);
+        }
         break;
       }
       case mqtt_publish_request: {
         mqtt_publish_info_t* pub_info = reinterpret_cast<mqtt_publish_info_t*>(info->info);
         while(false == mqtt->try_to_publish(pub_info)) {
           ESP_LOGW(TAG, "Publishing to %s has failed.", pub_info->topic.c_str());
+        }
+        if (pub_info->published_callback_info.callback) {
+          pub_info->published_callback_info.callback(true, pub_info->topic, pub_info->data, pub_info->published_callback_info.callback_arg);
         }
         break;
       }
