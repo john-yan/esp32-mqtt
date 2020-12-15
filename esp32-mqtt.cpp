@@ -12,9 +12,11 @@
 
 using std::string;
 
-esp_err_t MQTT::default_mqtt_event_handler(esp_mqtt_event_handle_t event) {
-  MQTT* mqtt = reinterpret_cast<MQTT*>(event->user_context);
+void MQTT::default_mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data) {
+
+  MQTT* mqtt = reinterpret_cast<MQTT*>(handler_args);
   CHECK_NOT_NULL(mqtt);
+  esp_mqtt_event_handle_t event = event_data;
 
   // handler internal signals
   switch(event->event_id) {
@@ -70,7 +72,6 @@ esp_err_t MQTT::default_mqtt_event_handler(esp_mqtt_event_handle_t event) {
     return info.handler(event, info.handler_arg);
   }
 
-  return ESP_OK;
 };
 
 void MQTT::init(const char* broker_uri) {
@@ -84,11 +85,10 @@ void MQTT::init(const char* broker_uri) {
   CHECK_NOT_NULL(broker_uri);
   esp_mqtt_client_config_t mqtt_cfg = { 0 };
   mqtt_cfg.uri = broker_uri;
-  mqtt_cfg.event_handle = default_mqtt_event_handler;
-  mqtt_cfg.user_context = this;
 
   client = esp_mqtt_client_init(&mqtt_cfg);
   CHECK_NOT_NULL(client);
+  esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, default_mqtt_event_handler, this);
   esp_mqtt_client_start(client);
 
   assert(pdPASS == xTaskCreate(mqtt_task, "mqtt_task", 4096, this, tskIDLE_PRIORITY, &mqtt_task_handle));
@@ -99,6 +99,7 @@ void MQTT::init(const char* broker_uri) {
 
   int connected = xEventGroupWaitBits(mqtt_event, MQTT_CONNECTED_BIT, false, true, portMAX_DELAY);
   assert(connected);
+
 }
 
 MQTT::mqtt_request_info_t* MQTT::allocate_subscribe_request_info(const char* topic, mqtt_topic_handler_t handler, void* handler_arg, int qos, mqtt_subscribed_callback_t callback, void* callback_arg) {

@@ -91,7 +91,7 @@ class MQTT {
       size_t topic_length, const char* data, size_t data_length);
   static void deallocate_request_info(mqtt_request_info_t* info);
 
-  static esp_err_t default_mqtt_event_handler(esp_mqtt_event_handle_t event);
+  static void default_mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data);
   static void mqtt_task(void*);
   bool try_to_subscribe(mqtt_subscribe_info_t* info);
   bool try_to_publish(mqtt_publish_info_t* info);
